@@ -1930,6 +1930,7 @@ function PlayPageClient() {
             margin: [danmakuSettingsRef.current.marginTop, danmakuSettingsRef.current.marginBottom],
             antiOverlap: true,
             synchronousPlayback: danmakuSettingsRef.current.synchronousPlayback,
+            emitter: false,
             filter: (danmu: any) => {
               // 应用过滤规则
               if (danmakuSettingsRef.current.filterRules.length > 0) {
