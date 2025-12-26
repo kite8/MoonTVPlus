@@ -48,6 +48,7 @@ export interface AdminConfig {
     OIDCClientId?: string; // OIDC Client ID
     OIDCClientSecret?: string; // OIDC Client Secret
     OIDCButtonText?: string; // OIDC登录按钮文字
+    OIDCMinTrustLevel?: number; // 最低信任等级（仅LinuxDo网站有效，为0时不判断）
   };
   UserConfig: {
     Users: {

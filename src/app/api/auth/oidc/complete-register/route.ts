@@ -102,6 +102,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 检查最低信任等级
+    const minTrustLevel = siteConfig.OIDCMinTrustLevel || 0;
+    if (minTrustLevel > 0) {
+      const userTrustLevel = oidcSession.trust_level ?? 0;
+      if (userTrustLevel < minTrustLevel) {
+        return NextResponse.json(
+          { error: `您的信任等级(${userTrustLevel})不满足最低要求(${minTrustLevel})` },
+          { status: 403 }
+        );
+      }
+    }
+
     // 检查是否与站长同名
     if (username === process.env.USERNAME) {
       return NextResponse.json(

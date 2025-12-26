@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       OIDCClientId,
       OIDCClientSecret,
       OIDCButtonText,
+      OIDCMinTrustLevel,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
       OIDCClientId?: string;
       OIDCClientSecret?: string;
       OIDCButtonText?: string;
+      OIDCMinTrustLevel?: number;
     };
 
     // 参数校验
@@ -135,7 +137,8 @@ export async function POST(request: NextRequest) {
       (OIDCUserInfoEndpoint !== undefined && typeof OIDCUserInfoEndpoint !== 'string') ||
       (OIDCClientId !== undefined && typeof OIDCClientId !== 'string') ||
       (OIDCClientSecret !== undefined && typeof OIDCClientSecret !== 'string') ||
-      (OIDCButtonText !== undefined && typeof OIDCButtonText !== 'string')
+      (OIDCButtonText !== undefined && typeof OIDCButtonText !== 'string') ||
+      (OIDCMinTrustLevel !== undefined && typeof OIDCMinTrustLevel !== 'number')
     ) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
@@ -190,6 +193,7 @@ export async function POST(request: NextRequest) {
       OIDCClientId,
       OIDCClientSecret,
       OIDCButtonText,
+      OIDCMinTrustLevel,
     };
 
     // 写入数据库
