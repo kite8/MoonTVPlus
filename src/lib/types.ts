@@ -127,6 +127,20 @@ export interface IStorage {
   getUserMovieRequests(userName: string): Promise<string[]>;
   addUserMovieRequest(userName: string, requestId: string): Promise<void>;
   removeUserMovieRequest(userName: string, requestId: string): Promise<void>;
+
+  // 新版用户存储（V2）- 可选方法
+  getUserInfoV2?(userName: string): Promise<{
+    role: 'owner' | 'admin' | 'user';
+    banned: boolean;
+    tags?: string[];
+    oidcSub?: string;
+    enabledApis?: string[];
+    created_at: number;
+    playrecord_migrated?: boolean;
+    favorite_migrated?: boolean;
+    skip_migrated?: boolean;
+    last_movie_request_time?: number;
+  } | null>;
 }
 
 // 搜索结果数据结构

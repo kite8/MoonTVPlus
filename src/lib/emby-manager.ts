@@ -43,14 +43,24 @@ class EmbyManager {
    */
   private async getSources(): Promise<EmbySourceConfig[]> {
     const config = await getConfig();
+    console.log('[EmbyManager] 获取配置完成');
+    console.log('[EmbyManager] EmbyConfig存在:', !!config.EmbyConfig);
+    console.log('[EmbyManager] EmbyConfig.Sources存在:', !!config.EmbyConfig?.Sources);
+    console.log('[EmbyManager] EmbyConfig.Sources是数组:', Array.isArray(config.EmbyConfig?.Sources));
+    if (config.EmbyConfig?.Sources) {
+      console.log('[EmbyManager] Sources长度:', config.EmbyConfig.Sources.length);
+      console.log('[EmbyManager] Sources内容:', JSON.stringify(config.EmbyConfig.Sources, null, 2));
+    }
 
     // 如果是新格式（Sources数组）
     if (config.EmbyConfig?.Sources && Array.isArray(config.EmbyConfig.Sources)) {
+      console.log('[EmbyManager] 使用新格式Sources，返回', config.EmbyConfig.Sources.length, '个源');
       return config.EmbyConfig.Sources;
     }
 
     // 如果是旧格式（单源配置），转换为数组格式
     if (config.EmbyConfig?.ServerURL) {
+      console.log('[EmbyManager] 使用旧格式配置，转换为数组');
       return [{
         key: 'default',
         name: 'Emby',
@@ -68,6 +78,7 @@ class EmbyManager {
       }];
     }
 
+    console.log('[EmbyManager] 没有找到任何Emby配置，返回空数组');
     return [];
   }
 
@@ -130,8 +141,12 @@ class EmbyManager {
    * 获取所有启用的Emby源配置
    */
   async getEnabledSources(): Promise<EmbySourceConfig[]> {
+    console.log('[EmbyManager] getEnabledSources 被调用');
     const sources = await this.getSources();
-    return sources.filter(s => s.enabled);
+    console.log('[EmbyManager] 获取到所有源:', sources.length, '个');
+    const enabledSources = sources.filter(s => s.enabled);
+    console.log('[EmbyManager] 过滤后启用的源:', enabledSources.length, '个');
+    return enabledSources;
   }
 
   /**

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     // 列表页不返回 requestedBy
     if (!detail) {
-      requests = requests.map(r => ({ ...r, requestedBy: undefined }));
+      requests = requests.map(r => ({ ...r, requestedBy: [] }));
     }
 
     // 按求片人数和时间排序
@@ -92,15 +92,17 @@ export async function POST(request: NextRequest) {
     const cooldownSeconds = config.SiteConfig.MovieRequestCooldown ?? 3600;
     const rateLimit = cooldownSeconds * 1000;
 
-    const userInfo = await storage.getUserInfoV2(authInfo.username);
-    if (userInfo?.last_movie_request_time) {
-      const elapsed = Date.now() - userInfo.last_movie_request_time;
-      if (elapsed < rateLimit) {
-        const remaining = Math.ceil((rateLimit - elapsed) / 60000);
-        return NextResponse.json(
-          { error: `操作太频繁，请${remaining}分钟后再试` },
-          { status: 429 }
-        );
+    if (storage.getUserInfoV2) {
+      const userInfo = await storage.getUserInfoV2(authInfo.username);
+      if (userInfo?.last_movie_request_time) {
+        const elapsed = Date.now() - userInfo.last_movie_request_time;
+        if (elapsed < rateLimit) {
+          const remaining = Math.ceil((rateLimit - elapsed) / 60000);
+          return NextResponse.json(
+            { error: `操作太频繁，请${remaining}分钟后再试` },
+            { status: 429 }
+          );
+        }
       }
     }
 
@@ -173,15 +175,17 @@ export async function POST(request: NextRequest) {
     await storage.addUserMovieRequest(authInfo.username, newRequest.id);
 
     // 更新频率限制 - 保存到用户信息的 hash 中
-    await storage.client.hSet(
-      `user:${authInfo.username}:info`,
-      'last_movie_request_time',
-      Date.now().toString()
-    );
+    if ('client' in storage && storage.client && typeof (storage.client as any).hSet === 'function') {
+      await (storage.client as any).hSet(
+        `user:${authInfo.username}:info`,
+        'last_movie_request_time',
+        Date.now().toString()
+      );
 
-    // 清除用户信息缓存，确保下次读取到最新数据
-    const { userInfoCache } = await import('@/lib/user-cache');
-    userInfoCache?.delete(authInfo.username);
+      // 清除用户信息缓存，确保下次读取到最新数据
+      const { userInfoCache } = await import('@/lib/user-cache');
+      userInfoCache?.delete(authInfo.username);
+    }
 
     // 给站长发送通知
     const ownerUsername = process.env.USERNAME;

@@ -45,11 +45,18 @@ export async function PATCH(
 
   try {
     const storage = getStorage();
-    const userInfo = await storage.getUserInfoV2(authInfo.username);
 
     // 检查权限：只有管理员和站长可以操作
-    if (userInfo?.role !== 'admin' && userInfo?.role !== 'owner') {
-      return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+    if (storage.getUserInfoV2) {
+      const userInfo = await storage.getUserInfoV2(authInfo.username);
+      if (userInfo?.role !== 'admin' && userInfo?.role !== 'owner') {
+        return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+      }
+    } else {
+      // 如果不支持 getUserInfoV2，只允许站长操作
+      if (authInfo.username !== process.env.USERNAME) {
+        return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+      }
     }
 
     const body = await request.json();
@@ -116,11 +123,18 @@ export async function DELETE(
 
   try {
     const storage = getStorage();
-    const userInfo = await storage.getUserInfoV2(authInfo.username);
 
     // 检查权限：只有管理员和站长可以删除
-    if (userInfo?.role !== 'admin' && userInfo?.role !== 'owner') {
-      return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+    if (storage.getUserInfoV2) {
+      const userInfo = await storage.getUserInfoV2(authInfo.username);
+      if (userInfo?.role !== 'admin' && userInfo?.role !== 'owner') {
+        return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+      }
+    } else {
+      // 如果不支持 getUserInfoV2，只允许站长操作
+      if (authInfo.username !== process.env.USERNAME) {
+        return NextResponse.json({ error: '无权限操作' }, { status: 403 });
+      }
     }
 
     const movieRequest = await storage.getMovieRequest(params.id);

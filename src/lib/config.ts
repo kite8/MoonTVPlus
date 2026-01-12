@@ -302,11 +302,18 @@ async function getInitConfig(configFile: string, subConfig: {
 export async function getConfig(): Promise<AdminConfig> {
   // 直接使用内存缓存
   if (cachedConfig) {
+    console.log('[Config] 使用缓存的配置');
+    console.log('[Config] 缓存中EmbyConfig存在:', !!cachedConfig.EmbyConfig);
+    console.log('[Config] 缓存中EmbyConfig.Sources存在:', !!cachedConfig.EmbyConfig?.Sources);
+    if (cachedConfig.EmbyConfig?.Sources) {
+      console.log('[Config] 缓存中Sources长度:', cachedConfig.EmbyConfig.Sources.length);
+    }
     return cachedConfig;
   }
 
   // 如果正在初始化，等待初始化完成
   if (configInitPromise) {
+    console.log('[Config] 等待配置初始化完成');
     return configInitPromise;
   }
 
