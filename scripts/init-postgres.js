@@ -18,30 +18,50 @@ console.log('📦 Initializing Vercel Postgres database...');
 const fs = require('fs');
 const path = require('path');
 
-const sqlPath = path.join(__dirname, '../migrations/postgres/001_initial_schema.sql');
-if (!fs.existsSync(sqlPath)) {
-  console.error('❌ Migration file not found:', sqlPath);
+// 获取所有迁移文件
+const migrationsDir = path.join(__dirname, '../migrations/postgres');
+if (!fs.existsSync(migrationsDir)) {
+  console.error('❌ Migrations directory not found:', migrationsDir);
   process.exit(1);
 }
 
-const schemaSql = fs.readFileSync(sqlPath, 'utf8');
+// 读取并排序所有 .sql 文件
+const migrationFiles = fs.readdirSync(migrationsDir)
+  .filter(file => file.endsWith('.sql'))
+  .sort(); // 按文件名排序，确保按顺序执行
+
+if (migrationFiles.length === 0) {
+  console.error('❌ No migration files found in:', migrationsDir);
+  process.exit(1);
+}
+
+console.log(`📄 Found ${migrationFiles.length} migration file(s):`, migrationFiles.join(', '));
 
 async function init() {
   try {
-    // 执行 schema 创建
-    console.log('🔧 Creating database schema...');
+    // 执行所有迁移脚本
+    console.log('🔧 Running database migrations...');
 
-    // 将 SQL 脚本按语句分割并逐个执行
-    const statements = schemaSql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+    for (const migrationFile of migrationFiles) {
+      const sqlPath = path.join(migrationsDir, migrationFile);
+      console.log(`  ⏳ Executing ${migrationFile}...`);
 
-    for (const statement of statements) {
-      await sql.query(statement);
+      const schemaSql = fs.readFileSync(sqlPath, 'utf8');
+
+      // 将 SQL 脚本按语句分割并逐个执行
+      const statements = schemaSql
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+      for (const statement of statements) {
+        await sql.query(statement);
+      }
+
+      console.log(`  ✅ ${migrationFile} executed successfully`);
     }
 
-    console.log('✅ Database schema created successfully!');
+    console.log('✅ All migrations completed successfully!');
 
     // 创建默认管理员用户
     const username = process.env.USERNAME || 'admin';

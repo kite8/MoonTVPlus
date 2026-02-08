@@ -414,14 +414,21 @@ export class PostgresStorage implements IStorage {
 
   async getUserInfoV2(userName: string): Promise<any> {
     try {
-      // 先尝试从数据库获取用户信息
+      // 先尝试从缓存获取用户信息
+      const { userInfoCache } = await import('./user-cache');
+      const cached = userInfoCache.get(userName);
+      if (cached) {
+        return cached;
+      }
+
+      // 从数据库获取用户信息
       const user = await this.db
         .prepare('SELECT * FROM users WHERE username = $1')
         .bind(userName)
         .first();
 
       if (user) {
-        return {
+        const userInfo = {
           role: user.role as 'owner' | 'admin' | 'user',
           banned: user.banned === 1,
           tags: user.tags ? JSON.parse(user.tags as string) : undefined,
@@ -435,6 +442,11 @@ export class PostgresStorage implements IStorage {
           email: user.email as string | undefined,
           emailNotifications: user.email_notifications === 1,
         };
+
+        // 缓存用户信息
+        userInfoCache.set(userName, userInfo);
+
+        return userInfo;
       }
 
       // 如果数据库中没有，检查是否是环境变量中的站长
@@ -470,6 +482,9 @@ export class PostgresStorage implements IStorage {
           console.error('Failed to create owner record:', insertErr);
           // 即使插入失败，仍然返回默认信息
         }
+
+        // 缓存站长信息
+        userInfoCache.set(userName, ownerInfo);
 
         return ownerInfo;
       }
@@ -681,6 +696,10 @@ export class PostgresStorage implements IStorage {
         .prepare(`UPDATE users SET ${fields.join(', ')} WHERE username = $${paramIndex}`)
         .bind(...values)
         .run();
+
+      // 清除用户信息缓存
+      const { userInfoCache } = await import('./user-cache');
+      userInfoCache.delete(userName);
     } catch (err) {
       console.error('PostgresStorage.updateUserInfoV2 error:', err);
       throw err;
@@ -736,6 +755,10 @@ export class PostgresStorage implements IStorage {
         .prepare('DELETE FROM users WHERE username = $1')
         .bind(userName)
         .run();
+
+      // 清除用户信息缓存
+      const { userInfoCache } = await import('./user-cache');
+      userInfoCache.delete(userName);
     } catch (err) {
       console.error('PostgresStorage.deleteUserV2 error:', err);
       throw err;
@@ -845,6 +868,10 @@ export class PostgresStorage implements IStorage {
         .prepare('UPDATE users SET email = $1 WHERE username = $2')
         .bind(email, userName)
         .run();
+
+      // 清除用户信息缓存
+      const { userInfoCache } = await import('./user-cache');
+      userInfoCache.delete(userName);
     } catch (err) {
       console.error('PostgresStorage.setUserEmail error:', err);
       throw err;
@@ -871,8 +898,428 @@ export class PostgresStorage implements IStorage {
         .prepare('UPDATE users SET email_notifications = $1 WHERE username = $2')
         .bind(enabled ? 1 : 0, userName)
         .run();
+
+      // 清除用户信息缓存
+      const { userInfoCache } = await import('./user-cache');
+      userInfoCache.delete(userName);
     } catch (err) {
       console.error('PostgresStorage.setEmailNotificationPreference error:', err);
+      throw err;
+    }
+  }
+
+  // ==================== 音乐播放记录 ====================
+
+  async getMusicPlayRecord(userName: string, key: string): Promise<any | null> {
+    try {
+      const result = await this.db
+        .prepare('SELECT * FROM music_play_records WHERE username = $1 AND key = $2')
+        .bind(userName, key)
+        .first();
+
+      if (!result) return null;
+
+      return {
+        platform: result.platform,
+        id: result.song_id,
+        name: result.name,
+        artist: result.artist,
+        album: result.album || undefined,
+        pic: result.pic || undefined,
+        play_time: result.play_time,
+        duration: result.duration,
+        save_time: result.save_time,
+      };
+    } catch (err) {
+      console.error('PostgresStorage.getMusicPlayRecord error:', err);
+      return null;
+    }
+  }
+
+  async setMusicPlayRecord(userName: string, key: string, record: any): Promise<void> {
+    try {
+      await this.db
+        .prepare(`
+          INSERT INTO music_play_records (username, key, platform, song_id, name, artist, album, pic, play_time, duration, save_time)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ON CONFLICT(username, key) DO UPDATE SET
+            name = EXCLUDED.name,
+            artist = EXCLUDED.artist,
+            album = EXCLUDED.album,
+            pic = EXCLUDED.pic,
+            play_time = EXCLUDED.play_time,
+            duration = EXCLUDED.duration,
+            save_time = EXCLUDED.save_time
+        `)
+        .bind(
+          userName,
+          key,
+          record.platform,
+          record.id,
+          record.name,
+          record.artist,
+          record.album || null,
+          record.pic || null,
+          record.play_time,
+          record.duration,
+          record.save_time
+        )
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.setMusicPlayRecord error:', err);
+      throw err;
+    }
+  }
+
+  async batchSetMusicPlayRecords(userName: string, records: { key: string; record: any }[]): Promise<void> {
+    if (records.length === 0) return;
+
+    try {
+      // 使用批量插入，Postgres 支持 batch 操作
+      const statements = records.map(({ key, record }) =>
+        this.db
+          .prepare(`
+            INSERT INTO music_play_records (username, key, platform, song_id, name, artist, album, pic, play_time, duration, save_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT(username, key) DO UPDATE SET
+              platform = EXCLUDED.platform,
+              song_id = EXCLUDED.song_id,
+              name = EXCLUDED.name,
+              artist = EXCLUDED.artist,
+              album = EXCLUDED.album,
+              pic = EXCLUDED.pic,
+              play_time = EXCLUDED.play_time,
+              duration = EXCLUDED.duration,
+              save_time = EXCLUDED.save_time
+          `)
+          .bind(
+            userName,
+            key,
+            record.platform,
+            record.id,
+            record.name,
+            record.artist,
+            record.album || null,
+            record.pic || null,
+            record.play_time,
+            record.duration,
+            record.save_time
+          )
+      );
+
+      if (this.db.batch) {
+        await this.db.batch(statements);
+      }
+    } catch (err) {
+      console.error('PostgresStorage.batchSetMusicPlayRecords error:', err);
+      throw err;
+    }
+  }
+
+  async getAllMusicPlayRecords(userName: string): Promise<{ [key: string]: any }> {
+    try {
+      const results = await this.db
+        .prepare('SELECT * FROM music_play_records WHERE username = $1 ORDER BY save_time DESC')
+        .bind(userName)
+        .all();
+
+      const records: { [key: string]: any } = {};
+      if (results.results) {
+        for (const row of results.results) {
+          records[row.key as string] = {
+            platform: row.platform,
+            id: row.song_id,
+            name: row.name,
+            artist: row.artist,
+            album: row.album || undefined,
+            pic: row.pic || undefined,
+            play_time: row.play_time,
+            duration: row.duration,
+            save_time: row.save_time,
+          };
+        }
+      }
+      return records;
+    } catch (err) {
+      console.error('PostgresStorage.getAllMusicPlayRecords error:', err);
+      throw err;
+    }
+  }
+
+  async deleteMusicPlayRecord(userName: string, key: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM music_play_records WHERE username = $1 AND key = $2')
+        .bind(userName, key)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.deleteMusicPlayRecord error:', err);
+      throw err;
+    }
+  }
+
+  async clearAllMusicPlayRecords(userName: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM music_play_records WHERE username = $1')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.clearAllMusicPlayRecords error:', err);
+      throw err;
+    }
+  }
+
+  // ==================== 音乐歌单相关 ====================
+
+  async createMusicPlaylist(userName: string, playlist: {
+    id: string;
+    name: string;
+    description?: string;
+    cover?: string;
+  }): Promise<void> {
+    try {
+      const now = Date.now();
+      await this.db
+        .prepare(`
+          INSERT INTO music_playlists (id, username, name, description, cover, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `)
+        .bind(
+          playlist.id,
+          userName,
+          playlist.name,
+          playlist.description || null,
+          playlist.cover || null,
+          now,
+          now
+        )
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.createMusicPlaylist error:', err);
+      throw err;
+    }
+  }
+
+  async getMusicPlaylist(playlistId: string): Promise<any | null> {
+    try {
+      const result = await this.db
+        .prepare('SELECT * FROM music_playlists WHERE id = $1')
+        .bind(playlistId)
+        .first();
+
+      if (!result) return null;
+
+      return {
+        id: result.id,
+        username: result.username,
+        name: result.name,
+        description: result.description || undefined,
+        cover: result.cover || undefined,
+        created_at: result.created_at,
+        updated_at: result.updated_at,
+      };
+    } catch (err) {
+      console.error('PostgresStorage.getMusicPlaylist error:', err);
+      return null;
+    }
+  }
+
+  async getUserMusicPlaylists(userName: string): Promise<any[]> {
+    try {
+      const results = await this.db
+        .prepare('SELECT * FROM music_playlists WHERE username = $1 ORDER BY created_at DESC')
+        .bind(userName)
+        .all();
+
+      if (!results.results) return [];
+
+      return results.results.map((row) => ({
+        id: row.id,
+        username: row.username,
+        name: row.name,
+        description: row.description || undefined,
+        cover: row.cover || undefined,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    } catch (err) {
+      console.error('PostgresStorage.getUserMusicPlaylists error:', err);
+      return [];
+    }
+  }
+
+  async updateMusicPlaylist(playlistId: string, updates: {
+    name?: string;
+    description?: string;
+    cover?: string;
+  }): Promise<void> {
+    try {
+      const setClauses: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (updates.name !== undefined) {
+        setClauses.push(`name = $${paramIndex++}`);
+        values.push(updates.name);
+      }
+      if (updates.description !== undefined) {
+        setClauses.push(`description = $${paramIndex++}`);
+        values.push(updates.description);
+      }
+      if (updates.cover !== undefined) {
+        setClauses.push(`cover = $${paramIndex++}`);
+        values.push(updates.cover);
+      }
+
+      if (setClauses.length === 0) return;
+
+      setClauses.push(`updated_at = $${paramIndex++}`);
+      values.push(Date.now());
+
+      values.push(playlistId);
+
+      await this.db
+        .prepare(`UPDATE music_playlists SET ${setClauses.join(', ')} WHERE id = $${paramIndex}`)
+        .bind(...values)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.updateMusicPlaylist error:', err);
+      throw err;
+    }
+  }
+
+  async deleteMusicPlaylist(playlistId: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM music_playlists WHERE id = $1')
+        .bind(playlistId)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.deleteMusicPlaylist error:', err);
+      throw err;
+    }
+  }
+
+  async addSongToPlaylist(playlistId: string, song: {
+    platform: string;
+    id: string;
+    name: string;
+    artist: string;
+    album?: string;
+    pic?: string;
+    duration: number;
+  }): Promise<void> {
+    try {
+      const now = Date.now();
+
+      // 获取当前最大的 sort_order
+      const maxSortResult = await this.db
+        .prepare('SELECT MAX(sort_order) as max_sort FROM music_playlist_songs WHERE playlist_id = $1')
+        .bind(playlistId)
+        .first();
+
+      const nextSortOrder = (maxSortResult?.max_sort as number || 0) + 1;
+
+      await this.db
+        .prepare(`
+          INSERT INTO music_playlist_songs (playlist_id, platform, song_id, name, artist, album, pic, duration, added_at, sort_order)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ON CONFLICT(playlist_id, platform, song_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            artist = EXCLUDED.artist,
+            album = EXCLUDED.album,
+            pic = EXCLUDED.pic,
+            duration = EXCLUDED.duration
+        `)
+        .bind(
+          playlistId,
+          song.platform,
+          song.id,
+          song.name,
+          song.artist,
+          song.album || null,
+          song.pic || null,
+          song.duration,
+          now,
+          nextSortOrder
+        )
+        .run();
+
+      // 更新歌单的 updated_at
+      await this.db
+        .prepare('UPDATE music_playlists SET updated_at = $1 WHERE id = $2')
+        .bind(now, playlistId)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.addSongToPlaylist error:', err);
+      throw err;
+    }
+  }
+
+  async removeSongFromPlaylist(playlistId: string, platform: string, songId: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM music_playlist_songs WHERE playlist_id = $1 AND platform = $2 AND song_id = $3')
+        .bind(playlistId, platform, songId)
+        .run();
+
+      // 更新歌单的 updated_at
+      await this.db
+        .prepare('UPDATE music_playlists SET updated_at = $1 WHERE id = $2')
+        .bind(Date.now(), playlistId)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.removeSongFromPlaylist error:', err);
+      throw err;
+    }
+  }
+
+  async getPlaylistSongs(playlistId: string): Promise<any[]> {
+    try {
+      const results = await this.db
+        .prepare('SELECT * FROM music_playlist_songs WHERE playlist_id = $1 ORDER BY sort_order ASC')
+        .bind(playlistId)
+        .all();
+
+      if (!results.results) return [];
+
+      return results.results.map((row) => ({
+        platform: row.platform,
+        id: row.song_id,
+        name: row.name,
+        artist: row.artist,
+        album: row.album || undefined,
+        pic: row.pic || undefined,
+        duration: row.duration,
+        added_at: row.added_at,
+        sort_order: row.sort_order,
+      }));
+    } catch (err) {
+      console.error('PostgresStorage.getPlaylistSongs error:', err);
+      return [];
+    }
+  }
+
+  async updatePlaylistSongOrder(playlistId: string, songOrders: Array<{ platform: string; songId: string; sortOrder: number }>): Promise<void> {
+    try {
+      const statements = songOrders.map(({ platform, songId, sortOrder }) =>
+        this.db
+          .prepare('UPDATE music_playlist_songs SET sort_order = $1 WHERE playlist_id = $2 AND platform = $3 AND song_id = $4')
+          .bind(sortOrder, playlistId, platform, songId)
+      );
+
+      if (this.db.batch) {
+        await this.db.batch(statements);
+      }
+
+      // 更新歌单的 updated_at
+      await this.db
+        .prepare('UPDATE music_playlists SET updated_at = $1 WHERE id = $2')
+        .bind(Date.now(), playlistId)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.updatePlaylistSongOrder error:', err);
       throw err;
     }
   }
